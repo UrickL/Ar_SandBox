@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#123b35">
+<title>GeoAR — Curvas de nível em 3D</title>
+<style>
+:root{--green:#123b35;--mint:#d9f3e7;--sand:#f4f0e6;--ink:#172b28;--orange:#f29f4b}
+*{box-sizing:border-box}body{margin:0;background:var(--sand);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--green);color:white;padding:22px max(18px,calc((100% - 1100px)/2));}
+header h1{margin:0;font-size:clamp(1.5rem,4vw,2.4rem)}header p{margin:7px 0 0;color:#d9f3e7;max-width:750px}
+main{max-width:1100px;margin:auto;padding:18px;display:grid;gap:16px}
+.panel{background:white;border-radius:18px;padding:18px;box-shadow:0 5px 22px #123b3510}
+h2{font-size:1.2rem;margin:0 0 10px}h3{font-size:1rem;margin:0 0 8px}
+.note{background:#fff5df;border-left:4px solid var(--orange);padding:10px 12px;border-radius:8px;font-size:.92rem}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,.filelabel{border:0;border-radius:10px;padding:11px 14px;background:var(--green);color:white;font-weight:650;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+button.secondary{background:#e4eee9;color:var(--green)}button.orange{background:var(--orange);color:#292016}
+input[type=file]{max-width:100%;font-size:.9rem}label{font-size:.92rem;font-weight:600}
+#stage{position:relative;min-height:300px;height:min(58vh,540px);background:#101b20;border-radius:14px;overflow:hidden}
+#scene{position:absolute;inset:0;width:100%;height:100%;display:block}
+#camera{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+#stage.camera-on #camera{display:block}#stage.camera-on #scene{background:transparent}
+#scene{z-index:1}#camera{z-index:0}
+.overlay{position:absolute;z-index:2;left:10px;right:10px;top:10px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.pill{background:#ffffffdf;border-radius:99px;padding:6px 10px;font-size:.8rem;font-weight:700}
+#status{font-size:.92rem;color:#53635f;margin-top:10px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.qr-card{border:1px solid #dbe5df;border-radius:14px;padding:12px;text-align:center;min-width:0}
+.qr{min-height:150px;display:grid;place-items:center;margin:8px auto}
+.qr img,.qr canvas{max-width:100%;height:auto!important}
+.qr-card p{font-size:.85rem;color:#53635f}
+.resource{display:grid;gap:8px}
+.resource input{width:100%}
+#preview{width:100%;max-height:220px;object-fit:contain;background:#edf2ee;border-radius:10px;display:none}
+small{color:#63716d}
+footer{max-width:1100px;margin:auto;padding:0 18px 25px;color:#63716d;font-size:.84rem}
+@media(max-width:720px){main{padding:12px}.grid{grid-template-columns:1fr}.qr-card{display:grid;grid-template-columns:110px 1fr;gap:8px;text-align:left;align-items:center}.qr-card .qr{grid-row:1/4;min-height:100px;margin:0}.qr-card .qr canvas,.qr-card .qr img{width:100px!important;height:100px!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>GeoAR: do desenho ao relevo 3D</h1>
+  <p>Uma experiência de Geografia para explorar curvas de nível, altitude e mapas hipsométricos usando a câmera do celular e modelos tridimensionais.</p>
+</header>
+<main>
+  <section class="panel">
+    <h2>1. Visualizador de relevo</h2>
+    <p>Abra a câmera e posicione o desenho de curvas de nível no campo de visão. O protótipo mostra um relevo 3D sobre a imagem da câmera; ajuste a escala e a rotação para investigar as formas do terreno.</p>
+    <div class="controls">
+      <button id="cameraBtn">Ativar câmera</button>
+      <button class="secondary" id="resetBtn">Reiniciar relevo</button>
+      <label>Exagero vertical <input id="heightScale" type="range" min="0.3" max="2.5" value="1.1" step="0.1"></label>
+    </div>
+    <div id="stage">
+      <video id="camera" autoplay playsinline muted></video>
+      <canvas id="scene"></canvas>
+      <div class="overlay"><span class="pill">Modelo demonstrativo</span><span class="pill">Arraste para girar • pinça/scroll para zoom</span></div>
+    </div>
+    <div id="status">Câmera desligada. O relevo 3D pode ser explorado mesmo sem câmera.</div>
+    <div class="note" style="margin-top:12px"><b>Importante:</b> esta versão é um protótipo de realidade aumentada com sobreposição visual. Ela não reconhece automaticamente qualquer desenho nem fixa o modelo à folha. Para rastreamento real de uma imagem-alvo, é necessário cadastrar o desenho como marcador (por exemplo, com MindAR) e gerar o arquivo de alvo correspondente.</div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Carregue seus materiais didáticos</h2>
+    <p>Os arquivos selecionados são processados localmente no navegador. Para modelos 3D, use preferencialmente <b>.glb</b> ou <b>.gltf</b>; para imagens, <b>PNG/JPG/WebP</b>. O mapa hipsométrico pode ser uma imagem colorida com legenda de altitude.</p>
+    <div class="grid">
+      <div class="qr-card resource">
+        <h3>QR 1 — Imagem</h3>
+        <div id="qr1" class="qr"></div>
+        <p>Abre a área para carregar uma imagem de referência, fotografia ou desenho de curvas de nível.</p>
+        <input id="imageFile" type="file" accept="image/*">
+        <img id="preview" alt="Prévia da imagem carregada">
+        <button class="secondary" id="showImage">Ver imagem na cena</button>
+      </div>
+      <div class="qr-card resource">
+        <h3>QR 2 — Objeto 3D</h3>
+        <div id="qr2" class="qr"></div>
+        <p>Abre a área para carregar um modelo de relevo ou outro objeto tridimensional.</p>
+        <input id="modelFile" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json">
+        <small>GLB recomendado: reúne geometria e texturas em um único arquivo.</small>
+        <button class="secondary" id="loadModel">Carregar modelo 3D</button>
+      </div>
+      <div class="qr-card resource">
+        <h3>QR 3 — Mapa hipsométrico</h3>
+        <div id="qr3" class="qr"></div>
+        <p>Abre a área para carregar um mapa hipsométrico para leitura das classes de altitude.</p>
+        <input id="hypsoFile" type="file" accept="image/*">
+        <button class="secondary" id="showHypso">Ver mapa na cena</button>
+      </div>
+    </div>
+    <div id="resourceStatus" class="note" style="margin-top:12px">Os QR codes direcionam para as seções desta página. Para que funcionem em outros celulares, publique este arquivo em um endereço HTTPS acessível e abra esse endereço antes de gerar/imprimir os QR codes.</div>
+  </section>
+
+  <section class="panel">
+    <h2>3. Roteiro rápido para a aula de Geografia</h2>
+    <ol>
+      <li>Peça aos estudantes que observem o espaçamento entre as curvas: curvas próximas indicam vertente mais íngreme; curvas afastadas indicam declive mais suave.</li>
+      <li>Compare o desenho 2D com o relevo 3D. Identifiquem cume, vale, divisor de águas e áreas de maior declividade.</li>
+      <li>Carregue um mapa hipsométrico e relacione as cores da legenda às faixas de altitude.</li>
+      <li>Discuta como relevo, drenagem, ocupação humana e erosão se relacionam no território.</li>
+    </ol>
+    <p class="note">Sugestão: use uma imagem com curvas fechadas concêntricas para representar uma elevação e outra com curvas em “V” para discutir vales fluviais.</p>
+  </section>
+</main>
+<footer>GeoAR educativo • Requer conexão à internet para carregar as bibliotecas 3D e QR code. O acesso à câmera exige HTTPS ou localhost e permissão do navegador.</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(() => {
+  const canvas = document.getElementById('scene'), stage = document.getElementById('stage');
+  const status = document.getElementById('status');
+  let renderer, scene, camera, terrain, loadedObject, currentTexture, videoStream;
+  let drag=false, px=0, py=0, yaw=0.55, pitch=0.9, zoom=1;
+  try {
+    renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.setSize(stage.clientWidth,stage.clientHeight,false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(45,stage.clientWidth/stage.clientHeight,.1,1000);
+    scene.add(new THREE.HemisphereLight(0xffffff,0x49605a,2));
+    const light = new THREE.DirectionalLight(0xffffff,2.2); light.position.set(5,10,7); scene.add(light);
+    buildTerrain();
+    animate();
+  } catch(e) { status.textContent='Este navegador não conseguiu iniciar o visualizador 3D: '+e.message; }
+
+  function buildTerrain(){
+    if(terrain) scene.remove(terrain);
+    const n=100, geo=new THREE.PlaneGeometry(10,10,n-1,n-1), p=geo.attributes.position;
+    for(let i=0;i<p.count;i++){
+      const x=p.getX(i), y=p.getY(i);
+      const z=1.55*Math.exp(-((x+1.1)**2+(y-.7)**2)/4.5)
+        +.9*Math.exp(-((x-2)**2+(y+1.6)**2)/2.1)
+        -.5*Math.exp(-((x-.2)**2+(y+1.4)**2)/.8)
+        +.12*Math.sin(x*2.2)*Math.cos(y*1.7);
+      p.setZ(i,z);
+    }
+    geo.computeVertexNormals();
+    const colors=[];
+    for(let i=0;i<p.count;i++){
+      let z=p.getZ(i), c=new THREE.Color();
+      if(z<.1)c.set('#4b8b62');else if(z<.45)c.set('#a9c66a');else if(z<.8)c.set('#e5d57b');else if(z<1.2)c.set('#d99a56');else c.set('#f2eee0');
+      colors.push(c.r,c.g,c.b);
+    }
+    geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+    const mat=new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:.92});
+    terrain=new THREE.Mesh(geo,mat); terrain.rotation.x=-Math.PI/2; terrain.name='terrain';
+    // Curves de nível visíveis
+    const contourMat=new THREE.LineBasicMaterial({color:0x294e39,transparent:true,opacity:.8});
+    for(let h=.15;h<1.65;h+=.22){
+      const pts=[];
+      for(let a=0;a<=220;a++){
+        const t=a/220*Math.PI*2;
+        const r=1.1+h*1.35;
+        const x=-1.1+Math.cos(t)*r, y=.7+Math.sin(t)*r*.78;
+        pts.push(new THREE.Vector3(x, .035, y));
+      }
+      const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),contourMat);
+      terrain.add(line);
+    }
+    terrain.scale.y=Number(document.getElementById('heightScale').value);
+    scene.add(terrain);
+    if(loadedObject){scene.remove(loadedObject);loadedObject=null;}
+  }
+  function animate(){
+    requestAnimationFrame(animate);
+    if(!renderer||!scene||!camera)return;
+    const dist=17/zoom;
+    camera.position.set(Math.sin(yaw)*dist, Math.cos(pitch)*dist, Math.cos(yaw)*dist);
+    camera.lookAt(0,.2,0);
+    renderer.render(scene,camera);
+  }
+  function resize(){
+    if(!renderer)return;
+    renderer.setSize(stage.clientWidth,stage.clientHeight,false);
+    camera.aspect=stage.clientWidth/stage.clientHeight;camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize',resize);
+  canvas.addEventListener('pointerdown',e=>{drag=true;px=e.clientX;py=e.clientY;canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(!drag)return;yaw-=(e.clientX-px)*.008;pitch=Math.max(.25,Math.min(1.5,pitch+(e.clientY-py)*.008));px=e.clientX;py=e.clientY;});
+  canvas.addEventListener('pointerup',()=>drag=false);
+  canvas.addEventListener('wheel',e=>{zoom=Math.max(.55,Math.min(2.4,zoom-e.deltaY*.001));e.preventDefault();},{passive:false});
+  document.getElementById('heightScale').addEventListener('input',e=>{if(terrain)terrain.scale.y=Number(e.target.value);});
+  document.getElementById('resetBtn').addEventListener('click',()=>{yaw=.55;pitch=.9;zoom=1;buildTerrain();status.textContent='Relevo demonstrativo reiniciado.';});
+  document.getElementById('cameraBtn').addEventListener('click',async()=>{
+    const video=document.getElementById('camera');
+    if(videoStream){videoStream.getTracks().forEach(t=>t.stop());videoStream=null;video.srcObject=null;stage.classList.remove('camera-on');document.getElementById('cameraBtn').textContent='Ativar câmera';status.textContent='Câmera desligada.';return;}
+    try{
+      videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+      video.srcObject=videoStream;await video.play();stage.classList.add('camera-on');
+      document.getElementById('cameraBtn').textContent='Desligar câmera';
+      status.textContent='Câmera ativa. O relevo é uma sobreposição demonstrativa; ainda não há rastreamento automático do papel.';
+    }catch(e){status.textContent='Não foi possível abrir a câmera. Use HTTPS/localhost e permita o acesso. Detalhe: '+e.message;}
+  });
+  const imageFile=document.getElementById('imageFile'), hypsoFile=document.getElementById('hypsoFile');
+  function previewFile(file, img){
+    if(!file)return;
+    const url=URL.createObjectURL(file);img.src=url;img.style.display='block';
+    img.onload=()=>{if(currentTexture)currentTexture.dispose();currentTexture=new THREE.Texture(img);currentTexture.colorSpace=THREE.SRGBColorSpace;currentTexture.needsUpdate=true;};
+  }
+  imageFile.addEventListener('change',()=>previewFile(imageFile.files[0],document.getElementById('preview')));
+  hypsoFile.addEventListener('change',()=>previewFile(hypsoFile.files[0],document.getElementById('preview')));
+  document.getElementById('showImage').addEventListener('click',()=>{
+    const f=imageFile.files[0];if(!f){alert('Selecione uma imagem primeiro.');return;}
+    const url=URL.createObjectURL(f);new THREE.TextureLoader().load(url,tex=>{tex.colorSpace=THREE.SRGBColorSpace;showTexture(tex);status.textContent='Imagem exibida como plano no espaço 3D.';});
+  });
+  document.getElementById('showHypso').addEventListener('click',()=>{
+    const f=hypsoFile.files[0];if(!f){alert('Selecione um mapa hipsométrico primeiro.');return;}
+    const url=URL.createObjectURL(f);new THREE.TextureLoader().load(url,tex=>{tex.colorSpace=THREE.SRGBColorSpace;showTexture(tex);status.textContent='Mapa hipsométrico exibido. Relacione as cores com a legenda de altitude.';});
+  });
+  function showTexture(tex){
+    if(loadedObject)scene.remove(loadedObject);
+    const mat=new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide});
+    loadedObject=new THREE.Mesh(new THREE.PlaneGeometry(7,4.5),mat);loadedObject.position.set(0,3,0);loadedObject.rotation.x=-.35;scene.add(loadedObject);
+  }
+  document.getElementById('loadModel').addEventListener('click',()=>{
+    const f=document.getElementById('modelFile').files[0];if(!f){alert('Selecione um arquivo .glb ou .gltf.');return;}
+    if(!THREE.GLTFLoader){status.textContent='O carregador GLTF não foi encontrado. Verifique a conexão com a internet.';return;}
+    const url=URL.createObjectURL(f);
+    new THREE.GLTFLoader().load(url,gltf=>{
+      if(loadedObject)scene.remove(loadedObject);
+      loadedObject=gltf.scene;loadedObject.position.set(0,0,0);
+      const box=new THREE.Box3().setFromObject(loadedObject), size=box.getSize(new THREE.Vector3()), max=Math.max(size.x,size.y,size.z)||1;
+      loadedObject.scale.setScalar(7/max);scene.add(loadedObject);
+      status.textContent='Modelo 3D carregado com sucesso.';
+    },undefined,err=>{status.textContent='Erro ao carregar o modelo. Prefira .glb e tente novamente.';console.error(err);});
+  });
+  // Os QR codes abrem as seções correspondentes do próprio site.
+  const base=location.href.split('#')[0];
+  if(window.QRCode){
+    new QRCode(document.getElementById('qr1'),{text:base+'#imagem',width:140,height:140});
+    new QRCode(document.getElementById('qr2'),{text:base+'#modelo3d',width:140,height:140});
+    new QRCode(document.getElementById('qr3'),{text:base+'#hipsometrico',width:140,height:140});
+  } else {
+    ['qr1','qr2','qr3'].forEach(id=>document.getElementById(id).textContent='QR indisponível offline');
+  }
+  function goHash(){
+    const h=location.hash;
+    if(h==='#imagem')document.getElementById('imageFile').scrollIntoView({behavior:'smooth',block:'center'});
+    if(h==='#modelo3d')document.getElementById('modelFile').scrollIntoView({behavior:'smooth',block:'center'});
+    if(h==='#hipsometrico')document.getElementById('hypsoFile').scrollIntoView({behavior:'smooth',block:'center'});
+  }
+  window.addEventListener('hashchange',goHash);if(location.hash)setTimeout(goHash,500);
+})();
+</script>
+</body>
+</html>
